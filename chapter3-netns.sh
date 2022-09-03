@@ -55,5 +55,3 @@ ip netns exec host2 ip addr add 192.168.2.2/24 dev host2-router2
 ip netns exec host2 ip link set host2-router2 up
 ip netns exec host2 ethtool -K host2-router2 rx off tx off
 ip netns exec host2 ip route add default via 192.168.2.1
-
-
