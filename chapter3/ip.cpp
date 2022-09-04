@@ -149,7 +149,6 @@ void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *upper_
 
     for(net_device* dev = net_dev_list; dev; dev = dev->next){
         if(dev->ip_dev == nullptr or dev->ip_dev->address == IP_ADDRESS(0, 0, 0, 0)) continue;
-        LOG_IP("%s/%s %s\n", ip_htoa(dev->ip_dev->address), ip_htoa(dev->ip_dev->netmask),  ip_htoa(dest_addr))
         if(in_subnet(dev->ip_dev->address, dev->ip_dev->netmask, dest_addr)){
             arp_table_entry* entry;
             entry = search_arp_table_entry(dest_addr);
