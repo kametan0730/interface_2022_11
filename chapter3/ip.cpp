@@ -89,10 +89,6 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len){
         return;
     }
 
-    if(ip_packet->ttl <= 1){ // TTLが1以下ならドロップ
-        return;
-    }
-
     if(ip_packet->dest_addr == IP_ADDRESS_LIMITED_BROADCAST){ // 宛先アドレスがブロードキャストアドレスの場合
         return ip_input_to_ours(input_dev, ip_packet, len); // 自分宛の通信として処理
     }
