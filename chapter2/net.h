@@ -11,13 +11,10 @@ struct net_device_ops{
     int (*poll)(net_device *dev);
 };
 
-struct ip_device;
-
 struct net_device{
     char ifname[32]; // インターフェース名
     uint8_t mac_address[6];
     net_device_ops ops;
-    ip_device *ip_dev;
     net_device *next;
     uint8_t send_buffer[1550];
     uint8_t recv_buffer[1550];
