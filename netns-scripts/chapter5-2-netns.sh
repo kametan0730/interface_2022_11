@@ -87,7 +87,7 @@ ip netns exec router3 ethtool -K router3-host3 rx off tx off
 ip netns exec router3 sysctl -w net.ipv4.ip_forward=1
 
 # host3のリンクの設定
-ip netns exec host3 ip addr add 192.168.2.2/24 dev host3-router3
+ip netns exec host3 ip addr add 192.168.4.2/24 dev host3-router3
 ip netns exec host3 ip link set host3-router3 up
 ip netns exec host3 ethtool -K host3-router3 rx off tx off
 ip netns exec host3 ip route add default via 192.168.4.1
