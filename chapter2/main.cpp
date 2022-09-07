@@ -12,20 +12,21 @@
 #include <sys/socket.h>
 #include "log.h"
 #include "net.h"
+
 /**
- * 無視するインターフェースたち
- * 中にはMACアドレスを持たないものなど、このプログラムで使うとエラーを引き起こすものもある
+ * 無視するネットワークインターフェースたち
+ * 中にはMACアドレスを持たないものなど、
+ * このプログラムで使うとエラーを引き起こすものもある
  */
 #define IGNORE_INTERFACES {"lo", "bond0", "dummy0", "tunl0", "sit0"}
 
 /**
  * 無視するデバイスかどうかを返す
  * @param ifname
- * @return 無視するデバイスかどうか
+ * @return IGNORE_INTERFACESに含まれているかどうか
  */
 bool is_ignore_interface(const char *ifname){
     char ignore_interfaces[][IF_NAMESIZE] = IGNORE_INTERFACES;
-
     for(int i = 0; i < sizeof(ignore_interfaces) / IF_NAMESIZE; i++){
         if(strcmp(ignore_interfaces[i], ifname) == 0){
             return true;
@@ -36,32 +37,33 @@ bool is_ignore_interface(const char *ifname){
 
 /**
  * インターフェース名からデバイスを探す
- * @param interface
+ * @param name デバイス名
  * @return
  */
-net_device *get_net_device_by_name(const char *interface){
+net_device *get_net_device_by_name(const char *name){
     net_device *dev;
     for(dev = net_dev_list; dev; dev = dev->next){
-        if(strcmp(dev->ifname, interface) == 0){
+        if(strcmp(dev->name, name) == 0){
             return dev;
         }
     }
     return nullptr;
 }
 
-int net_device_transmit(struct net_device *dev, uint8_t *buffer, size_t len); // 宣言のみ
-int net_device_poll(net_device *dev); // 宣言のみ
+// 宣言のみ
+int net_device_transmit(struct net_device *dev,
+                        uint8_t *buffer, size_t len);
+int net_device_poll(net_device *dev);
 
 /**
  * デバイスのプラットフォーム依存のデータ
  */
 struct net_device_data{
-    int fd;
+    int fd; // socketのFile descriptor
 };
 
 /**
  * エントリーポイント
- * @return
  */
 int main(){
     struct ifreq ifr{};
@@ -72,7 +74,6 @@ int main(){
 
     for(ifaddrs *tmp = addrs; tmp; tmp = tmp->ifa_next){
         if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET){
-
             // ioctlでコントロールするインターフェースを設定
             memset(&ifr, 0, sizeof(ifr));
             strcpy(ifr.ifr_name, tmp->ifa_name);
@@ -87,17 +88,17 @@ int main(){
             int sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
             if(sock == -1){
                 LOG_ERROR("socket open failed: %s\n", strerror(errno));
-                continue;
+                exit(EXIT_FAILURE);
             }
 
             // インターフェースのインデックスを取得
             if(ioctl(sock, SIOCGIFINDEX, &ifr) == -1){
                 LOG_ERROR("ioctl SIOCGIFINDEX failed: %s\n", strerror(errno));
                 close(sock);
-                continue;
+                exit(EXIT_FAILURE);
             }
 
-            // インターフェースをsocketにbindする
+            // socketにインターフェースをbindする
             sockaddr_ll addr{};
             memset(&addr, 0x00, sizeof(addr));
             addr.sll_family = AF_PACKET;
@@ -106,7 +107,7 @@ int main(){
             if(bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1){
                 LOG_ERROR("bind failed: %s\n", strerror(errno));
                 close(sock);
-                continue;
+                exit(EXIT_FAILURE);
             }
 
             // インターフェースのMACアドレスを取得
@@ -121,11 +122,11 @@ int main(){
             dev->ops.transmit = net_device_transmit; // 送信用の関数を設定
             dev->ops.poll = net_device_poll; // 受信用の関数を設定
 
-            strcpy(dev->ifname, tmp->ifa_name); // net_deviceにインターフェース名をセット
-            memcpy(dev->mac_address, &ifr.ifr_hwaddr.sa_data[0], 6); // net_deviceにMACアドレスをセット
+            strcpy(dev->name, tmp->ifa_name); // net_deviceにインターフェース名をセット
+            memcpy(dev->mac_addr, &ifr.ifr_hwaddr.sa_data[0], 6); // net_deviceにMACアドレスをセット
             ((net_device_data *) dev->data)->fd = sock;
 
-            printf("Created dev %s socket %d address %02x:%02x:%02x:%02x:%02x:%02x \n", dev->ifname, sock, dev->mac_address[0], dev->mac_address[1], dev->mac_address[2], dev->mac_address[3], dev->mac_address[4], dev->mac_address[5]);
+            printf("Created device %s socket %d address %02x:%02x:%02x:%02x:%02x:%02x \n", dev->name, sock, dev->mac_addr[0], dev->mac_addr[1], dev->mac_addr[2], dev->mac_addr[3], dev->mac_addr[4], dev->mac_addr[5]);
 
             // net_deviceの連結リストに連結させる
             net_device *next;
@@ -134,18 +135,17 @@ int main(){
             dev->next = next;
 
             // ノンブロッキングに設定
-            int val = fcntl(sock, F_GETFL, 0); // File descriptorのflagを取得
-            fcntl(sock, F_SETFL, val | O_NONBLOCK); // Non blockingのbitをセット
+            int val = fcntl(sock, F_GETFL, 0); // File descriptorのFlagを取得
+            fcntl(sock, F_SETFL, val | O_NONBLOCK); // Non blockingのビットをセット
         }
     }
-
     // 確保されていたメモリを解放
     freeifaddrs(addrs);
 
     // 1つも有効化されたインターフェースをが無かったら終了
     if(net_dev_list == nullptr){
         LOG_ERROR("No interface is enabled!\n");
-        return 0;
+        exit(EXIT_FAILURE);
     }
 
     while(true){
@@ -154,38 +154,47 @@ int main(){
             dev->ops.poll(dev);
         }
     }
+    printf("Goodbye!\n");
     return 0;
 }
 
 /**
  * ネットデバイスの送信処理
- * @param dev
- * @param buf
- * @return
+ * @param dev 送信に使用するデバイス
+ * @param buffer 送信するバッファ
+ * @param len バッファの長さ
  */
-int net_device_transmit(struct net_device *dev, uint8_t *buffer, size_t len){
-    send(((net_device_data *) dev->data)->fd, buffer, len, 0); // socketを通して送信
+int net_device_transmit(struct net_device *dev,
+                        uint8_t *buffer, size_t len){
+    // socketを通して送信
+    send(((net_device_data *) dev->data)->fd,
+         buffer, len, 0);
     return 0;
 }
 
 /**
  * ネットワークデバイスの受信処理
- * @param dev
- * @return
+ * @param dev 受信を試みるデバイス
  */
 int net_device_poll(net_device *dev){
-    ssize_t n = recv(((net_device_data *) dev->data)->fd, dev->recv_buffer, sizeof(dev->recv_buffer), 0); // socketから受信
+    uint8_t recv_buffer[1550];
+    // socketから受信
+    ssize_t n = recv(
+            ((net_device_data *) dev->data)->fd,
+            recv_buffer,
+            sizeof(recv_buffer), 0);
     if(n == -1){
-        if(errno == EAGAIN){
+        if(errno == EAGAIN){ // 受け取るデータが無い場合
             return 0;
         }else{
-            return -1;
+            return -1; // 他のエラーなら
         }
     }
-    //ethernet_input(dev, dev->recv_buffer, n); // 受信したデータをイーサネットに送る
-    printf("Received %lu bytes from %s: ", n, dev->ifname);
+
+    printf("Received %lu bytes from %s: ",
+           n, dev->name);
     for(int i = 0; i < n; ++i){
-        printf("%02x", dev->recv_buffer[i]);
+        printf("%02x", recv_buffer[i]);
     }
     printf("\n");
     return 0;
