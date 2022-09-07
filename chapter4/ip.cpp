@@ -18,7 +18,6 @@ bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_add
     return ((target_address & subnet_mask) == (subnet_prefix & subnet_mask));
 }
 
-
 /**
  * 自分宛のIPパケットの処理
  * @param input_dev
@@ -26,7 +25,6 @@ bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_add
  * @param len
  */
 void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
-
     // フラグメントされているかの確認
     if((ntohs(ip_packet->frag_offset) & IP_FRAG_OFFSET_MASK_OFFSET) != 0 or
        (ntohs(ip_packet->frag_offset) & IP_FRAG_OFFSET_MASK_MF_FLAG)){
@@ -36,21 +34,21 @@ void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
 
     // 上位プロトコルの処理に移行
     switch(ip_packet->protocol){
-        case IP_PROTOCOL_TYPE_ICMP:
+        case IP_PROTOCOL_NUM_ICMP:
             return icmp_input(
                     ntohl(ip_packet->src_addr),
                     ntohl(ip_packet->dest_addr),
                     ((uint8_t *) ip_packet) + IP_HEADER_SIZE,
                     len - IP_HEADER_SIZE
             );
-        case IP_PROTOCOL_TYPE_UDP:
+        case IP_PROTOCOL_NUM_UDP:
             send_icmp_destination_unreachable(
-                    input_dev->ip_dev->address,
                     ntohl(ip_packet->src_addr),
+                    input_dev->ip_dev->address,
                     ICMP_DESTINATION_UNREACHABLE_CODE_PORT_UNREACHABLE,
                     ip_packet, len);
             return;
-        case IP_PROTOCOL_TYPE_TCP:
+        case IP_PROTOCOL_NUM_TCP:
             // まだこのルータにはTCPを扱う機能はない
             return;
 
@@ -61,7 +59,6 @@ void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
     }
 }
 
-
 /**
  * IPパケットの受信処理
  * @param input_dev
@@ -69,7 +66,6 @@ void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
  * @param len
  */
 void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len){
-
     // IPアドレスのついていないインターフェースからの受信は無視
     if(input_dev->ip_dev == nullptr or input_dev->ip_dev->address == 0){
         return;
@@ -77,7 +73,7 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len){
 
     // IPヘッダ長より短かったらドロップ
     if(len < sizeof(ip_header)){
-        LOG_IP("Received IP packet too short from %s\n", input_dev->ifname);
+        LOG_IP("Received IP packet too short from %s\n", input_dev->name);
         return;
     }
 
@@ -98,60 +94,58 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len){
         return;
     }
 
-    /*
     if(ip_packet->dest_addr == IP_ADDRESS_LIMITED_BROADCAST){ // 宛先アドレスがブロードキャストアドレスの場合
         return ip_input_to_ours(input_dev, ip_packet, len); // 自分宛の通信として処理
-    }*/
+    }
 
-    // 宛先IPアドレスがルータの持っているIPアドレスの時の処理
+    // 宛先IPアドレスをルータが持ってるか調べる
     for(net_device *dev = net_dev_list; dev; dev = dev->next){
-        if(dev->ip_dev->address != IP_ADDRESS(0, 0, 0, 0)){
-            if(htonl(dev->ip_dev->address) == ip_packet->dest_addr){ // TODO ブロードキャストを考慮
+        if(dev->ip_dev != nullptr and dev->ip_dev->address != IP_ADDRESS(0, 0, 0, 0)){
+            // 宛先IPアドレスがルータの持っているIPアドレス or ディレクティッド・ブロードキャストアドレスの時の処理
+            if(dev->ip_dev->address == ntohl(ip_packet->dest_addr) or dev->ip_dev->broadcast == ntohl(ip_packet->dest_addr)){
                 return ip_input_to_ours(dev, ip_packet, len); // 自分宛の通信として処理
             }
         }
     }
-
 }
-
 
 /**
  * IPパケットにカプセル化して送信
- * @param dest_addr
- * @param src_addr
- * @param upper_layer_buffer
- * @param protocol_type
+ * @param dest_addr 送信先のIPアドレス
+ * @param src_addr 送信元のIPアドレス
+ * @param payload_mybuf 包んで送信するmy_buf構造体の先頭
+ * @param protocol_num IPプロトコル番号
  */
-void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *upper_layer_buffer, uint8_t protocol_type){
+void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *payload_mybuf, uint8_t protocol_num){
 
-    // IPヘッダで必要なIPパケットの全長を算出する
+    // 連結リストをたどってIPヘッダで必要なIPパケットの全長を算出する
     uint16_t total_len = 0;
-    my_buf *current_buffer = upper_layer_buffer;
-    while(current_buffer != nullptr){
-        total_len += current_buffer->len;
-        current_buffer = current_buffer->next_my_buf;
+    my_buf *current = payload_mybuf;
+    while(current != nullptr){
+        total_len += current->len;
+        current = current->next;
     }
 
     // IPヘッダ用のバッファを確保する
-    my_buf *ip_my_buf = my_buf::create(IP_HEADER_SIZE);
-    upper_layer_buffer->add_header(ip_my_buf); // 上位プロトコルのデータにヘッダとして連結する
+    my_buf *ip_mybuf = my_buf::create(IP_HEADER_SIZE);
+    payload_mybuf->add_header(ip_mybuf); // 包んで送るデータにヘッダとして連結する
 
     // IPヘッダの各項目を設定
-    auto *ip_buf = reinterpret_cast<ip_header *>(ip_my_buf->buffer);
+    auto *ip_buf = reinterpret_cast<ip_header *>(ip_mybuf->buffer);
     ip_buf->version = 4;
     ip_buf->header_len = sizeof(ip_header) >> 2;
     ip_buf->tos = 0;
     ip_buf->total_len = htons(sizeof(ip_header) + total_len);
-    ip_buf->protocol = protocol_type; // 8bit
+    ip_buf->protocol = protocol_num; // 8bit
 
-    static uint64_t id = 0;
+    static uint16_t id = 0;
     ip_buf->identify = id++;
     ip_buf->frag_offset = 0;
     ip_buf->ttl = 0xff;
     ip_buf->header_checksum = 0;
     ip_buf->dest_addr = htonl(dest_addr);
     ip_buf->src_addr = htonl(src_addr);
-    ip_buf->header_checksum = checksum_16(reinterpret_cast<uint16_t *>(ip_my_buf->buffer), ip_my_buf->len);
+    ip_buf->header_checksum = checksum_16(reinterpret_cast<uint16_t *>(ip_mybuf->buffer), ip_mybuf->len);
 
     for(net_device* dev = net_dev_list; dev; dev = dev->next){
         if(dev->ip_dev == nullptr or dev->ip_dev->address == IP_ADDRESS(0, 0, 0, 0)) continue;
@@ -161,11 +155,10 @@ void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *upper_
             if(entry == nullptr){
                 LOG_IP("Trying ip output, but no arp record to %s\n", ip_htoa(dest_addr));
                 send_arp_request(dev, dest_addr);
-                my_buf::my_buf_free(upper_layer_buffer, true);
+                my_buf::my_buf_free(payload_mybuf, true);
                 return;
             }
-            ethernet_encapsulate_output(dev, entry->mac_address, ip_my_buf, ETHERNET_TYPE_IP);
+            ethernet_encapsulate_output(dev, entry->mac_addr, ip_mybuf, ETHER_TYPE_IP);
         }
     }
-
 }
