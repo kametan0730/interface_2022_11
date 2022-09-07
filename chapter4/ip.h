@@ -43,8 +43,6 @@ struct net_device;
 
 bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_address);
 
-struct net_device;
-
 void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len);
 
 struct my_buf;
