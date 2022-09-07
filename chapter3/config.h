@@ -6,6 +6,6 @@
 
 struct net_device;
 
-void configure_ip(net_device *dev, uint32_t address, uint32_t netmask);
+void configure_ip_address(net_device *dev, uint32_t address, uint32_t netmask);
 
 #endif //CURO_CONFIG_H

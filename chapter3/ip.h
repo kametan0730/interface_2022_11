@@ -10,9 +10,9 @@
 
 #define IP_HEADER_SIZE 20
 
-#define IP_PROTOCOL_TYPE_ICMP 0x01
-#define IP_PROTOCOL_TYPE_TCP 0x06
-#define IP_PROTOCOL_TYPE_UDP 0x11
+#define IP_PROTOCOL_NUM_ICMP 0x01
+#define IP_PROTOCOL_NUM_TCP 0x06
+#define IP_PROTOCOL_NUM_UDP 0x11
 
 #define IP_FRAG_OFFSET_MASK_RESERVED_FLAG         0b1000000000000000
 #define IP_FRAG_OFFSET_MASK_DF_FLAG    0b0100000000000000
@@ -34,10 +34,10 @@ struct ip_header{
 } __attribute__((packed));
 
 struct ip_device{
-    uint32_t address = 0;
-    uint32_t netmask = 0;
+    uint32_t address = 0; // デバイスのIPアドレス
+    uint32_t netmask = 0; // サブネットマスク
+    uint32_t broadcast = 0; // ブロードキャストアドレス
 };
-
 
 struct net_device;
 
@@ -49,6 +49,6 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len);
 
 struct my_buf;
 
-void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *buffer, uint8_t protocol_type);
+void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *payload_mybuf, uint8_t protocol_num);
 
 #endif //CURO_IP_H
