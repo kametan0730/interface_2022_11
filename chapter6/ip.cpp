@@ -68,13 +68,6 @@ bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_add
  * @param len
  */
 void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
-    // フラグメントされているかの確認
-    if((ntohs(ip_packet->frag_offset) & IP_FRAG_OFFSET_MASK_OFFSET) != 0 or
-       (ntohs(ip_packet->frag_offset) & IP_FRAG_OFFSET_MASK_MF_FLAG)){
-        LOG_IP("IP fragment is not supported\n");
-        return;
-    }
-
     // NATの外側から内側への通信か判断
     for(net_device *dev = net_dev_list; dev; dev = dev->next){
         if(dev->ip_dev != nullptr and dev->ip_dev->nat_dev != nullptr and
