@@ -2,7 +2,6 @@
 
 #include "arp.h"
 #include "ethernet.h"
-#include "icmp.h"
 #include "log.h"
 #include "my_buf.h"
 #include "utils.h"
@@ -28,26 +27,17 @@ void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
     // 上位プロトコルの処理に移行
     switch(ip_packet->protocol){
         case IP_PROTOCOL_NUM_ICMP:
-            return icmp_input(
-                    ntohl(ip_packet->src_addr),
-                    ntohl(ip_packet->dest_addr),
-                    ((uint8_t *) ip_packet) + IP_HEADER_SIZE,
-                    len - IP_HEADER_SIZE
-            );
+            LOG_IP("ICMP received!\n");
+            return;
+
         case IP_PROTOCOL_NUM_UDP:
-            send_icmp_destination_unreachable(
-                    ntohl(ip_packet->src_addr),
-                    input_dev->ip_dev->address,
-                    ICMP_DESTINATION_UNREACHABLE_CODE_PORT_UNREACHABLE,
-                    ip_packet, len);
             return;
         case IP_PROTOCOL_NUM_TCP:
             // まだこのルータにはTCPを扱う機能はない
             return;
-
         default:
 
-        LOG_IP("Unhandled ip protocol %04x", ip_packet->protocol);
+            LOG_IP("Unhandled ip protocol %04x", ip_packet->protocol);
             return;
     }
 }

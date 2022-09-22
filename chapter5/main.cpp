@@ -16,6 +16,7 @@
 #include "ethernet.h"
 #include "ip.h"
 #include "log.h"
+#include "nat.h"
 #include "net.h"
 
 /**
@@ -59,18 +60,10 @@ net_device *get_net_device_by_name(const char *name){
  * 設定する
  */
 void configure(){
-    configure_ip_address(
-            get_net_device_by_name("router1-host1"),
-            IP_ADDRESS(192, 168, 1, 1),
-            IP_ADDRESS(255, 255, 255, 0));
-    configure_ip_address(
-            get_net_device_by_name(
-                    "router1-router2"),
-            IP_ADDRESS(192, 168, 0, 1),
-            IP_ADDRESS(255, 255, 255, 0));
-    configure_ip_net_route(
-            IP_ADDRESS(192, 168, 2, 0), 24,
-            IP_ADDRESS(192, 168, 0, 2));
+    configure_ip_address(get_net_device_by_name("router1-br0"), IP_ADDRESS(192, 168, 1, 1), IP_ADDRESS(255, 255, 255, 0));
+    configure_ip_address(get_net_device_by_name("router1-router2"), IP_ADDRESS(192, 168, 0, 1), IP_ADDRESS(255, 255, 255, 0));
+    configure_ip_net_route(IP_ADDRESS(192, 168, 2, 0), 24, IP_ADDRESS(192, 168, 0, 2));
+    configure_ip_nat(get_net_device_by_name("router1-br0"), get_net_device_by_name("router1-router2"));
 }
 
 // 宣言のみ
@@ -193,6 +186,7 @@ int main(){
             printf("\n");
             if(input == 'a') dump_arp_table_entry();
             else if(input == 'r') dump_ip_fib();
+            else if(input == 'n') dump_nat_tables();
             else if(input == 'q') break;
         }
         // デバイスから通信を受信

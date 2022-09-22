@@ -10,6 +10,10 @@
 #include <netpacket/packet.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include "arp.h"
+#include "config.h"
+#include "ethernet.h"
+#include "ip.h"
 #include "log.h"
 #include "net.h"
 
@@ -48,6 +52,21 @@ net_device *get_net_device_by_name(const char *name){
         }
     }
     return nullptr;
+}
+
+/**
+ * 設定する
+ */
+void configure(){
+    configure_ip_address(
+            get_net_device_by_name("router1-host1"),
+            IP_ADDRESS(192, 168, 1, 1),
+            IP_ADDRESS(255, 255, 255, 0));
+    configure_ip_address(
+            get_net_device_by_name(
+                    "router1-router2"),
+            IP_ADDRESS(192, 168, 0, 1),
+            IP_ADDRESS(255, 255, 255, 0));
 }
 
 // 宣言のみ
@@ -148,7 +167,27 @@ int main(){
         exit(EXIT_FAILURE);
     }
 
+
+    // ネットワーク設定の投入
+    configure();
+
+    // 入力時にバッファリングせずにすぐ受け取る設定
+    termios attr{};
+    tcgetattr(0, &attr);
+    attr.c_lflag &= ~ICANON;
+    attr.c_cc[VTIME] = 0;
+    attr.c_cc[VMIN] = 1;
+    tcsetattr(0, TCSANOW, &attr);
+    fcntl(0, F_SETFL, O_NONBLOCK); // 標準入力にノンブロッキングの設定
+
     while(true){
+
+        int input = getchar(); // 入力を受け取る
+        if(input != -1){ // 入力があったら
+            printf("\n");
+            if(input == 'a') dump_arp_table_entry();
+            else if(input == 'q') break;
+        }
         // デバイスから通信を受信
         for(net_device *dev = net_dev_list; dev; dev = dev->next){
             dev->ops.poll(dev);
@@ -190,12 +229,7 @@ int net_device_poll(net_device *dev){
             return -1; // 他のエラーなら
         }
     }
-
-    printf("Received %lu bytes from %s: ",
-           n, dev->name);
-    for(int i = 0; i < n; ++i){
-        printf("%02x", recv_buffer[i]);
-    }
-    printf("\n");
+    // 受信したデータをイーサネットに送る
+    ethernet_input(dev, recv_buffer, n);
     return 0;
 }

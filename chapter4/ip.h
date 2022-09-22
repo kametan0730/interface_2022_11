@@ -34,7 +34,27 @@ struct ip_device{
     uint32_t broadcast = 0; // ブロードキャストアドレス
 };
 
+enum ip_route_type{
+    connected, // 直接接続されているネットワークの経路　
+    network
+};
+
 struct net_device;
+
+struct ip_route_entry{
+    ip_route_type type;
+    union{
+        net_device *dev;
+        uint32_t next_hop;
+    };
+};
+
+template<typename DATA_TYPE>
+struct binary_trie_node;
+
+extern binary_trie_node<ip_route_entry> *ip_fib;
+
+void dump_ip_fib();
 
 bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_address);
 
@@ -42,6 +62,9 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len);
 
 struct my_buf;
 
+void ip_output_to_host(net_device *dev, uint32_t dest_address, uint32_t src_address, my_buf *buffer);
+void ip_output_to_next_hop(uint32_t next_hop, my_buf *buffer);
+void ip_output(uint32_t dest_addr, uint32_t src_addr, my_buf *buffer);
 void ip_encapsulate_output(uint32_t dest_addr, uint32_t src_addr, my_buf *payload_mybuf, uint8_t protocol_num);
 
 #endif //CURO_IP_H

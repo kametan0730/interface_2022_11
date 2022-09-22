@@ -3,6 +3,7 @@
 #include "binary_trie.h"
 #include "ip.h"
 #include "log.h"
+#include "nat.h"
 #include "net.h"
 #include "utils.h"
 
@@ -67,3 +68,18 @@ void configure_ip_address(net_device *dev, uint32_t address, uint32_t netmask){
            ip_htoa(address & netmask), len, dev->name);
 }
 
+/**
+ * デバイスにNATを設定
+ * @param inside NATの内側のデバイス
+ * @param outside NATの外側のデバイス
+ */
+void configure_ip_nat(net_device *inside, net_device *outside){
+    if(inside == nullptr or outside == nullptr or inside->ip_dev == nullptr or outside->ip_dev == nullptr){
+        LOG_ERROR("Failed to configure NAT %s => %s\n", inside->name, outside->name);
+        exit(EXIT_FAILURE); // プログラムを終了
+    }
+
+    inside->ip_dev->nat_dev = (nat_device *) calloc(1, sizeof(nat_device));
+    inside->ip_dev->nat_dev->entries = (nat_entries *) calloc(1, sizeof(nat_entries));
+    inside->ip_dev->nat_dev->outside_addr = outside->ip_dev->address;
+}

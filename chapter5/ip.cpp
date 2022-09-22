@@ -6,6 +6,7 @@
 #include "icmp.h"
 #include "log.h"
 #include "my_buf.h"
+#include "nat.h"
 #include "utils.h"
 
 /**
@@ -67,6 +68,47 @@ bool in_subnet(uint32_t subnet_prefix, uint32_t subnet_mask, uint32_t target_add
  * @param len
  */
 void ip_input_to_ours(net_device *input_dev, ip_header *ip_packet, size_t len){
+    // NATの外側から内側への通信か判断
+    for(net_device *dev = net_dev_list; dev; dev = dev->next){
+        if(dev->ip_dev != nullptr and dev->ip_dev->nat_dev != nullptr and
+           dev->ip_dev->nat_dev->outside_addr == ntohl(ip_packet->dest_addr)){
+            bool nat_executed = false;
+            switch(ip_packet->protocol){
+                case IP_PROTOCOL_NUM_UDP:
+                    if(nat_exec(ip_packet, len,
+                                dev->ip_dev->nat_dev,
+                                nat_protocol::udp,
+                                nat_direction::incoming)){
+                        nat_executed = true;
+                    }
+                    break;
+                case IP_PROTOCOL_NUM_TCP:
+                    if(nat_exec(ip_packet, len,
+                                dev->ip_dev->nat_dev,
+                                nat_protocol::tcp,
+                                nat_direction::incoming)){
+                        nat_executed = true;
+                    }
+                    break;
+                case IP_PROTOCOL_NUM_ICMP:
+                    if(nat_exec(ip_packet, len,
+                                dev->ip_dev->nat_dev,
+                                nat_protocol::icmp,
+                                nat_direction::incoming)){
+                        nat_executed = true;
+                    }
+                    break;
+            }
+            if(nat_executed){
+                my_buf* nat_fwd_mybuf = my_buf::create(len);
+                memcpy(nat_fwd_mybuf->buffer, ip_packet, len);
+                nat_fwd_mybuf->len = len;
+                ip_output(ntohl(ip_packet->dest_addr), ntohl(ip_packet->src_addr), nat_fwd_mybuf);
+                return;
+            }
+        }
+    }
+
     // 上位プロトコルの処理に移行
     switch(ip_packet->protocol){
         case IP_PROTOCOL_NUM_ICMP:
@@ -140,6 +182,36 @@ void ip_input(net_device *input_dev, uint8_t *buffer, ssize_t len){
             if(dev->ip_dev->address == ntohl(ip_packet->dest_addr) or dev->ip_dev->broadcast == ntohl(ip_packet->dest_addr)){
                 return ip_input_to_ours(dev, ip_packet, len); // 自分宛の通信として処理
             }
+        }
+    }
+
+    // NATの内側から外側への通信
+    if(input_dev->ip_dev->nat_dev != nullptr){
+        if(ip_packet->protocol == IP_PROTOCOL_NUM_UDP){ // NATの対象
+            if(!nat_exec(ip_packet, len,
+                         input_dev->ip_dev->nat_dev,
+                         nat_protocol::udp,
+                         nat_direction::outgoing)){
+                return; // NATできないパケットはドロップ
+            }
+        }else if(ip_packet->protocol == IP_PROTOCOL_NUM_TCP){
+            if(!nat_exec(ip_packet, len,
+                         input_dev->ip_dev->nat_dev,
+                         nat_protocol::tcp,
+                         nat_direction::outgoing)){
+                return; // NATできないパケットはドロップ
+            }
+        }else if(ip_packet->protocol == IP_PROTOCOL_NUM_ICMP){
+            if(!nat_exec(ip_packet, len,
+                         input_dev->ip_dev->nat_dev,
+                         nat_protocol::icmp,
+                         nat_direction::outgoing)){
+                return; // NATできないパケットはドロップ
+            }
+        }else{
+            LOG_IP("NAT unimplemented packet dropped type=%d\n", ip_packet->protocol);
+            return; // NATできないパケットはドロップ
+
         }
     }
 

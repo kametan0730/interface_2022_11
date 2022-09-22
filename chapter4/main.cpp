@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include "arp.h"
+#include "binary_trie.h"
 #include "config.h"
 #include "ethernet.h"
 #include "ip.h"
@@ -67,6 +68,9 @@ void configure(){
                     "router1-router2"),
             IP_ADDRESS(192, 168, 0, 1),
             IP_ADDRESS(255, 255, 255, 0));
+    configure_ip_net_route(
+            IP_ADDRESS(192, 168, 2, 0), 24,
+            IP_ADDRESS(192, 168, 0, 2));
 }
 
 // 宣言のみ
@@ -167,6 +171,8 @@ int main(){
         exit(EXIT_FAILURE);
     }
 
+    // IPルーティングテーブルの木構造のrootノードを作成
+    ip_fib = (binary_trie_node<ip_route_entry> *) calloc(1, sizeof(binary_trie_node<ip_route_entry>));
 
     // ネットワーク設定の投入
     configure();
@@ -186,6 +192,7 @@ int main(){
         if(input != -1){ // 入力があったら
             printf("\n");
             if(input == 'a') dump_arp_table_entry();
+            else if(input == 'r') dump_ip_fib();
             else if(input == 'q') break;
         }
         // デバイスから通信を受信
